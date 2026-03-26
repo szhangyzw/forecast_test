@@ -173,11 +173,11 @@ def run_cutoff0_daily_direct_backtest(output_dir: str | Path = DEFAULT_OUTPUT, e
                 })
             prophet_out = predict_prophet_daily_direct(p_daily, target_month)
             if prophet_out is not None:
-                daily_rows.append(prophet_out.assign(platform=platform, model_name='prophet_daily_direct_c0'))
+                daily_rows.append(prophet_out.assign(platform=platform, model_name='prophet_daily'))
                 pred_total = float(prophet_out['pred_daily_sales'].sum())
                 actual_total = float(prophet_out['actual_daily_sales'].sum())
                 monthly_rows.append({
-                    'target_month': target_month, 'cutoff_day': 0, 'platform': platform, 'model_name': 'prophet_daily_direct_c0',
+                    'target_month': target_month, 'cutoff_day': 0, 'platform': platform, 'model_name': 'prophet_daily',
                     'pred_total_sales': pred_total, 'actual_total_sales': actual_total,
                     'abs_error_total': abs(pred_total-actual_total), 'ape_total': None if actual_total == 0 else abs(pred_total-actual_total)/actual_total,
                     'bias_total': pred_total-actual_total,

@@ -11,7 +11,7 @@ from src.models.baseline_growth import predict_growth, estimate_recent_yoy_growt
 from src.models.xgb_model import train_xgb, predict_xgb, FEATURES_CUTOFF0, FEATURES_CUTOFFN
 from src.feature_engineering.build_month_level_feature import build_month_level_features
 from src.models.prophet_model import predict_prophet_full_month
-from src.models.prophet_oldlogic_model import predict_prophet_oldlogic
+from src.models.prophet_oldlogic_model import predict_prophet_mixed
 from src.models.daily_direct_models import predict_tree_daily_direct, predict_prophet_daily_direct
 
 
@@ -306,7 +306,7 @@ def run_backtest(
                             target_month=target_month,
                             cutoff_day=0,
                             platform=platform,
-                            model_name="prophet_daily_direct_c0",
+                            model_name="prophet_daily",
                             pred_remaining_sales=float(pred_total_prophet_dd),
                             actual_remaining_sales=actual_total,
                             pred_total_sales=float(pred_total_prophet_dd),
@@ -392,7 +392,7 @@ def run_backtest(
                 observed_end = month_start + pd.Timedelta(days=int(cutoff_day) - 1)
                 pred_start = observed_end + pd.Timedelta(days=1)
                 pred_end = month_start + pd.offsets.MonthEnd(0)
-                pred_remaining_prophet = predict_prophet_oldlogic(
+                pred_remaining_prophet = predict_prophet_mixed(
                     history_df[['date', 'sales']].copy().assign(
                         date=lambda d: pd.to_datetime(d['date'])
                     ).pipe(lambda d: pd.concat([
@@ -414,7 +414,7 @@ def run_backtest(
                         target_month=target_month,
                         cutoff_day=cutoff_day,
                         platform=platform,
-                        model_name="prophet_oldlogic",
+                        model_name="prophet_mixed",
                         pred_remaining_sales=float(pred_remaining_prophet),
                         actual_remaining_sales=actual_remaining,
                         pred_total_sales=pred_total_prophet,
@@ -494,7 +494,7 @@ def run_backtest(
                         target_month=target_month,
                         cutoff_day=cutoff_day,
                         platform=platform,
-                        model_name=f"prophet_daily_direct_c{cutoff_day}",
+                        model_name="prophet_daily",
                         pred_remaining_sales=pred_remaining_prophet_dd,
                         actual_remaining_sales=actual_remaining,
                         pred_total_sales=float(pred_total_prophet_dd),
@@ -532,7 +532,7 @@ def run_backtest(
                         target_month=target_month,
                         cutoff_day=cutoff_day,
                         platform=platform,
-                        model_name="xgboost_residual_p50_v3",
+                        model_name="xgboost_residual",
                         pred_remaining_sales=pred_remaining_xgb,
                         actual_remaining_sales=actual_remaining,
                         pred_total_sales=pred_total_xgb,

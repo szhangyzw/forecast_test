@@ -95,6 +95,13 @@ python main.py --action backtest --cutoff-days 0,7,13,21,28 --brand total --plat
 - `brand:brand1`
 - `brand1@京东`
 
+forecast 当前会同时输出多个模型结果，并增加推荐标记字段，例如：
+- `model_name`
+- `pred_total_sales`
+- `pred_remaining_sales`
+- `recommended_model`
+- `is_recommended`
+
 ### backtest 输出
 会输出该切片下的模型回测对比表，包括：
 - `cutoff_day`

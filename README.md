@@ -26,16 +26,16 @@
 - `xgboost_v2_event`
 - `gbdt_daily_direct_c0`
 - `xgboost_daily_direct_c0`
-- `prophet_daily_direct_c0`
+- `prophet_daily`
 
 ### cutoff > 0（月中预测 / 剩余销量预测）
 - `history_average`
 - `mtd_progress_p50`
-- `prophet_oldlogic`
-- `xgboost_residual_p50_v3`
+- `prophet_mixed`
+- `xgboost_residual`
 - `gbdt_daily_direct_c{cutoff}`
 - `xgboost_daily_direct_c{cutoff}`
-- `prophet_daily_direct_c{cutoff}`
+- `prophet_daily`
 
 ---
 
@@ -175,8 +175,8 @@ python main.py --action backtest --cutoff-days 0,5,10,15,20,25
 
 ### cutoff > 0
 - `mtd_progress_p50` 当前通常最稳
-- `xgboost_residual_p50_v3` 在部分早期 cutoff 可作为增强候选
-- Prophet old logic 可以保留为候选，但当前通常不是最优
+- `xgboost_residual` 在部分早期 cutoff 可作为增强候选
+- `prophet_mixed` 可以保留为候选，但当前通常不是最优
 
 > 注意：以上是当前测试数据下的经验结论，不代表换数据后仍完全成立。
 

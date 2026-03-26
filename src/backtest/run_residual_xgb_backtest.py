@@ -95,7 +95,7 @@ def run_residual_xgb_backtest(output_dir: str | Path = DEFAULT_OUTPUT, exclude_m
                     'target_month': target_month,
                     'cutoff_day': cutoff,
                     'platform': platform,
-                    'model_name': 'xgboost_residual_p50_v3',
+                    'model_name': 'xgboost_residual',
                     'baseline_remaining_p50': baseline_remaining,
                     'pred_residual': pred_residual,
                     'pred_remaining_sales': pred_remaining,

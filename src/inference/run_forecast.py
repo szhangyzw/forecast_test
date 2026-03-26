@@ -14,7 +14,7 @@ from src.models.baseline_history import predict_history_average
 from src.models.baseline_growth import predict_growth, estimate_recent_yoy_growth
 from src.models.xgb_model import train_xgb, predict_xgb, FEATURES_CUTOFF0, FEATURES_CUTOFFN
 from src.models.prophet_model import predict_prophet_full_month
-from src.models.prophet_oldlogic_model import predict_prophet_oldlogic
+from src.models.prophet_oldlogic_model import predict_prophet_mixed
 from src.models.daily_direct_models import predict_tree_daily_direct, predict_prophet_daily_direct
 from src.inference.recommend_model import recommend_model
 
@@ -252,7 +252,7 @@ def run_forecast(
                 target_month=target_month,
                 cutoff_day=0,
             )
-            _append_prediction(results, base_row, 'prophet_daily_direct_c0', pred_total_prophet_dd, pred_total_prophet_dd)
+            _append_prediction(results, base_row, 'prophet_daily', pred_total_prophet_dd, pred_total_prophet_dd)
 
         result_df = _finalize_prediction_output(pd.DataFrame(results), cutoff_day=0)
         result_df.to_csv(output_dir / 'feature_store' / f'forecast_fullmonth_prediction_{target_month}_{brand}_{platform}.csv', index=False)
@@ -301,7 +301,7 @@ def run_forecast(
         pred_end = month_start + pd.offsets.MonthEnd(0)
         train_daily = hist[['date', 'sales']].copy().assign(date=lambda d: pd.to_datetime(d['date']))
         current_obs = daily[(daily['platform'] == entity) & (daily['year_month'] == target_month) & (daily['day_seq_in_month'] <= cutoff_day)][['date', 'sales']]
-        pred_remaining_prophet = predict_prophet_oldlogic(
+        pred_remaining_prophet = predict_prophet_mixed(
             pd.concat([train_daily, current_obs], ignore_index=True).sort_values('date'),
             monthly_pivot=monthly_pivot,
             col=entity,
@@ -312,7 +312,7 @@ def run_forecast(
             pred_end=pred_end,
         )
         pred_total_prophet = row['mtd_sales'] + pred_remaining_prophet if not pd.isna(pred_remaining_prophet) else pd.NA
-        _append_prediction(results, base_row, 'prophet_oldlogic', pred_total_prophet, pred_remaining_prophet)
+        _append_prediction(results, base_row, 'prophet_mixed', pred_total_prophet, pred_remaining_prophet)
 
         pred_total_gbdt_dd = predict_tree_daily_direct(
             daily[daily['platform'] == entity].copy().sort_values('date'),
@@ -340,7 +340,7 @@ def run_forecast(
             cutoff_day=cutoff_day,
         )
         pred_remaining_prophet_dd = pred_total_prophet_dd - row['mtd_sales'] if pred_total_prophet_dd is not None and not pd.isna(pred_total_prophet_dd) else pd.NA
-        _append_prediction(results, base_row, f'prophet_daily_direct_c{cutoff_day}', pred_total_prophet_dd, pred_remaining_prophet_dd)
+        _append_prediction(results, base_row, 'prophet_daily', pred_total_prophet_dd, pred_remaining_prophet_dd)
 
         train_snapshot = snapshot[(snapshot['platform'] == entity) & (snapshot['target_month'] < target_month)].copy()
         train_snapshot['baseline_total_p50'] = train_snapshot.apply(
@@ -364,7 +364,7 @@ def run_forecast(
         else:
             pred_remaining_xgb = pd.NA
             pred_total_xgb = pd.NA
-        _append_prediction(results, base_row, 'xgboost_residual_p50_v3', pred_total_xgb, pred_remaining_xgb)
+        _append_prediction(results, base_row, 'xgboost_residual', pred_total_xgb, pred_remaining_xgb)
 
     result_df = _finalize_prediction_output(pd.DataFrame(results), cutoff_day=cutoff_day)
     result_df.to_csv(output_dir / 'feature_store' / f'forecast_feature_snapshot_{target_month}_cutoff{cutoff_day}_{brand}_{platform}.csv', index=False)

@@ -81,7 +81,7 @@ def build_prophet_holidays(start_year=2024, end_year=2027):
     return holidays
 
 
-def predict_prophet_oldlogic(
+def predict_prophet_mixed(
     train_daily: pd.DataFrame,
     monthly_pivot: pd.DataFrame,
     col: str,
