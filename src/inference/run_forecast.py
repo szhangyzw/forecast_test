@@ -259,6 +259,8 @@ def run_forecast(
         return result_df
 
     snapshot = build_snapshot_features(daily, cutoff_day=cutoff_day)
+    scope_map = daily[['platform', 'brand_scope', 'platform_scope']].drop_duplicates()
+    snapshot = snapshot.merge(scope_map, on='platform', how='left')
     snapshot = add_historical_share_features(snapshot)
     snapshot = snapshot[snapshot['target_month'] == target_month].copy()
 
