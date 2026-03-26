@@ -11,6 +11,8 @@
 | 3 | b5bc9b6 | - | feature | 2026-03-26 | run_forecast 支持多品牌；输出全部模型结果并增加推荐标签 | e919721 | 是 | 已包含多品牌 backtest 能力 |
 | 4 | e054a03 | - | docs | 2026-03-26 | 新增 VERSION_HISTORY 版本管理表，统一记录版本关系与回滚点 | b5bc9b6 | 是 | 版本管理开始结构化维护 |
 | 5 | 26b1b53 | - | refactor | 2026-03-26 | 统一模型命名：prophet_oldlogic→prophet_mixed，prophet_daily_direct_c*→prophet_daily，xgboost_residual_p50_v3→xgboost_residual | e054a03 | 是 | 代码与文档同步改名 |
+| 6 | 349955c | - | fix | 2026-03-26 | 修复 forecast snapshot 输出中 brand_scope/platform_scope 未按实体保留的问题 | f183e70 | 是 | 多品牌 forecast 输出字段修正 |
+| 7 | - | - | release | 2026-03-26 | 已将当前最新版本强制推送到 GitHub 仓库 `szhangyzw/forecast_test` 的 `main` 分支，并同步 tag `v0.1-server-baseline` | 349955c | 是 | 远端已可下载；仓库地址已记录到 TOOLS.md |
 
 ## 建议维护规则
 
