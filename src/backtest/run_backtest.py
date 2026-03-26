@@ -81,6 +81,8 @@ def run_backtest(
 
     cutoff_days = _normalize_cutoff_days(cutoff_days)
     daily = prepare_daily_feature_table(DEFAULT_INPUT, brand=brand, platform=platform)
+    if daily.empty:
+        raise ValueError(f'未找到可用于回测的数据：brand={brand}, platform={platform}。如果传多个值，请用逗号分隔，例如 brand=A,B,C')
     complete_months = [m for m in _get_complete_months(daily) if m not in set(exclude_months)]
 
     results = []

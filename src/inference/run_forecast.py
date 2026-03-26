@@ -28,6 +28,15 @@ def _normalize_choice(value: str | None, default: str = 'total') -> str:
     return value if value else default
 
 
+def _parse_scope_values(value: str | None, available: list[str], default: str = 'total') -> list[str]:
+    value = _normalize_choice(value, default)
+    if value == 'all':
+        return list(available)
+    if ',' in value:
+        return [x.strip() for x in value.split(',') if x.strip()]
+    return [value]
+
+
 def _build_entity_views(raw: pd.DataFrame, brand: str = 'total', platform: str = 'total') -> pd.DataFrame:
     brand = _normalize_choice(brand, 'total')
     platform = _normalize_choice(platform, 'total')
@@ -36,8 +45,8 @@ def _build_entity_views(raw: pd.DataFrame, brand: str = 'total', platform: str =
     brands = sorted(raw['brand'].dropna().astype(str).unique().tolist()) if 'brand' in raw.columns else []
     platforms = sorted(raw['platform'].dropna().astype(str).unique().tolist())
 
-    brand_values = brands if brand == 'all' else [brand]
-    platform_values = platforms if platform == 'all' else [platform]
+    brand_values = _parse_scope_values(brand, brands, 'total')
+    platform_values = _parse_scope_values(platform, platforms, 'total')
 
     for b in brand_values:
         for p in platform_values:
@@ -117,7 +126,7 @@ def run_forecast(
 
     daily = prepare_daily_feature_table(DEFAULT_INPUT, brand=brand, platform=platform)
     if daily.empty:
-        raise ValueError(f'未找到可用数据：brand={brand}, platform={platform}')
+        raise ValueError(f'未找到可用数据：brand={brand}, platform={platform}。如果传多个值，请用逗号分隔，例如 brand=A,B,C')
     daily.to_csv(output_dir / 'processed' / 'sales_daily_agg_features.csv', index=False)
 
     if cutoff_day == 0:
