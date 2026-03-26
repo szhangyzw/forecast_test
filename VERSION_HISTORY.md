@@ -10,7 +10,7 @@
 | 2 | e919721 | - | feature | 2026-03-26 | 支持 backtest 多品牌逗号传参；空数据时报错信息更清晰 | be67b91 | 是 | 已包含基线全部内容 |
 | 3 | b5bc9b6 | - | feature | 2026-03-26 | run_forecast 支持多品牌；输出全部模型结果并增加推荐标签 | e919721 | 是 | 已包含多品牌 backtest 能力 |
 | 4 | e054a03 | - | docs | 2026-03-26 | 新增 VERSION_HISTORY 版本管理表，统一记录版本关系与回滚点 | b5bc9b6 | 是 | 版本管理开始结构化维护 |
-| 5 | 待提交 | - | refactor | 2026-03-26 | 统一模型命名：prophet_oldlogic→prophet_mixed，prophet_daily_direct_c*→prophet_daily，xgboost_residual_p50_v3→xgboost_residual | e054a03 | 是 | 代码与文档同步改名 |
+| 5 | 26b1b53 | - | refactor | 2026-03-26 | 统一模型命名：prophet_oldlogic→prophet_mixed，prophet_daily_direct_c*→prophet_daily，xgboost_residual_p50_v3→xgboost_residual | e054a03 | 是 | 代码与文档同步改名 |
 
 ## 建议维护规则
 
