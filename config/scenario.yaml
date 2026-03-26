@@ -1,0 +1,19 @@
+scenarios:
+  fullmonth:
+    cutoff_day: 0
+    description: 月初/月底前预测整月销量
+  cutoff_5:
+    cutoff_day: 5
+    description: 截止5号预测剩余销量
+  cutoff_10:
+    cutoff_day: 10
+    description: 截止10号预测剩余销量
+  cutoff_15:
+    cutoff_day: 15
+    description: 截止15号预测剩余销量
+  cutoff_20:
+    cutoff_day: 20
+    description: 截止20号预测剩余销量
+  cutoff_25:
+    cutoff_day: 25
+    description: 截止25号预测剩余销量

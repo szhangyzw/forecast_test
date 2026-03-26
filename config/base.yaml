@@ -1,0 +1,20 @@
+project_name: ecommerce_sales_forecast
+timezone: Asia/Shanghai
+currency: CNY
+
+paths:
+  raw_data_dir: data/raw
+  processed_data_dir: data/processed
+  feature_dir: data/feature_store
+  backtest_dir: data/backtest_result
+
+business:
+  target_metric: sales
+  default_platforms:
+    - 京东
+    - 阿里
+    - total
+  forecast_stages:
+    early: [0, 7]
+    mid: [8, 20]
+    late: [21, 31]

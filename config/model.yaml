@@ -1,0 +1,21 @@
+models:
+  baseline_history:
+    enabled: true
+  baseline_growth:
+    enabled: true
+  baseline_mtd_progress:
+    enabled: true
+  prophet:
+    enabled: true
+    seasonality_mode: multiplicative
+  xgboost:
+    enabled: true
+    params:
+      n_estimators: 300
+      max_depth: 4
+      learning_rate: 0.05
+      subsample: 0.8
+      colsample_bytree: 0.8
+  ensemble:
+    enabled: true
+    method: simple_average
