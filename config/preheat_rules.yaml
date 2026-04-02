@@ -1,0 +1,23 @@
+preheat:
+  enabled: true
+  months: [5, 10]
+  default_uplift: 1.0
+
+  uplift_rules:
+    - brand: total
+      uplift: 1.25
+
+    - brand: brand2
+      uplift: 1.25
+
+    - brand: brand3
+      uplift: 1.25
+
+    - brand: brand1
+      uplift: 1.0
+
+preferred_model:
+  default: null
+  rules:
+    - brand: brand1
+      preferred_model: yoy_growth_extrapolation

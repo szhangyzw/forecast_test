@@ -4,10 +4,20 @@ from pathlib import Path
 import pandas as pd
 
 from src.inference.run_forecast import prepare_daily_feature_table
-from src.feature_engineering.build_snapshot_feature import build_snapshot_features, add_historical_share_features
+from src.feature_engineering.build_snapshot_feature import build_snapshot_features, add_historical_share_features, add_historical_ytd_share_features
 from src.models.baseline_history import predict_history_average
 from src.models.baseline_mtd_progress import predict_by_progress
+from src.models.baseline_ytd_progress import predict_by_ytd_progress
 from src.models.baseline_growth import predict_growth, estimate_recent_yoy_growth
+from src.models.cutoff0_enhanced import (
+    predict_seasonal_event_adjusted_yoy,
+    predict_similar_month_retrieval,
+    predict_cutoff0_triplet_ensemble,
+    apply_preheat_bias_correction,
+    apply_fixed_preheat_uplift,
+    DEFAULT_PREHEAT_UPLIFT,
+)
+from src.config_runtime import get_preheat_uplift
 from src.models.xgb_model import train_xgb, predict_xgb, FEATURES_CUTOFF0, FEATURES_CUTOFFN
 from src.feature_engineering.build_month_level_feature import build_month_level_features
 from src.models.prophet_model import predict_prophet_full_month
@@ -16,7 +26,8 @@ from src.models.daily_direct_models import predict_tree_daily_direct, predict_pr
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT = PROJECT_ROOT / "data" / "raw" / "test_forecast_data.csv"
+WORKSPACE_ROOT = PROJECT_ROOT.parent
+DEFAULT_INPUT = WORKSPACE_ROOT / "data" / "test_forecast_data.csv"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "backtest_result"
 
 
@@ -90,6 +101,8 @@ def run_backtest(
     for cutoff_day in cutoff_days:
         if cutoff_day == 0:
             # 用 month t 的历史，预测 month t+1 整月
+            history_snapshot_c0 = build_snapshot_features(daily, cutoff_day=0)
+            history_snapshot_c0 = add_historical_ytd_share_features(history_snapshot_c0)
             for platform in sorted(daily["platform"].unique()):
                 month_total = build_month_level_features(daily[daily["platform"] == platform])
                 month_total = month_total.rename(columns={"month_total_sales": "actual_total_sales"}).sort_values("year_month").reset_index(drop=True)
@@ -129,34 +142,37 @@ def run_backtest(
                         bias_total=pred_total - actual_total,
                     )
 
-                    # 1.5) prophet full month
-                    pred_total_prophet = predict_prophet_full_month(
-                        daily_hist[['date', 'sales']].copy(),
-                        target_month=target_month,
-                    )
-                    if pd.notna(pred_total_prophet):
+                    hist_p_snapshot_c0 = history_snapshot_c0[(history_snapshot_c0['platform'] == platform) & (history_snapshot_c0['target_month'] == hist_months.iloc[-1]['year_month'])]
+                    if not hist_p_snapshot_c0.empty and pd.notna(hist_p_snapshot_c0.iloc[-1].get('hist_ytd_share_p50')) and pd.notna(hist_p_snapshot_c0.iloc[-1].get('hist_month_share_p50')):
+                        pred_year_total_ytd = predict_by_ytd_progress(
+                            float(hist_p_snapshot_c0.iloc[-1]['ytd_sales']),
+                            float(hist_p_snapshot_c0.iloc[-1]['hist_ytd_share_p50'])
+                        )
+                        pred_total_ytd_to_month = pred_year_total_ytd * float(hist_p_snapshot_c0.iloc[-1]['hist_month_share_p50'])
                         _append_result(
                             results,
                             target_month=target_month,
                             cutoff_day=0,
                             platform=platform,
-                            model_name="prophet_fullmonth",
-                            pred_remaining_sales=float(pred_total_prophet),
+                            model_name="ytd_to_month_share_p50",
+                            pred_remaining_sales=pred_total_ytd_to_month,
                             actual_remaining_sales=actual_total,
-                            pred_total_sales=float(pred_total_prophet),
+                            pred_total_sales=pred_total_ytd_to_month,
                             actual_total_sales=actual_total,
-                            abs_error_remaining=abs(float(pred_total_prophet) - actual_total),
-                            ape_remaining=_safe_pct_err(float(pred_total_prophet), actual_total),
-                            bias_remaining=float(pred_total_prophet) - actual_total,
-                            abs_error_total=abs(float(pred_total_prophet) - actual_total),
-                            ape_total=_safe_pct_err(float(pred_total_prophet), actual_total),
-                            bias_total=float(pred_total_prophet) - actual_total,
+                            abs_error_remaining=abs(pred_total_ytd_to_month - actual_total),
+                            ape_remaining=_safe_pct_err(pred_total_ytd_to_month, actual_total),
+                            bias_remaining=pred_total_ytd_to_month - actual_total,
+                            abs_error_total=abs(pred_total_ytd_to_month - actual_total),
+                            ape_total=_safe_pct_err(pred_total_ytd_to_month, actual_total),
+                            bias_total=pred_total_ytd_to_month - actual_total,
                         )
 
                     # 2) last year same month
                     target_period = pd.Period(target_month, freq="M")
                     ly_period = target_period - 12
                     ly_row = hist_months[hist_months["period"] == ly_period]
+                    pred_total_ly = pd.NA
+                    pred_total_yoy = pd.NA
                     if not ly_row.empty:
                         pred_total_ly = float(ly_row.iloc[0]["actual_total_sales"])
                         _append_result(
@@ -225,24 +241,162 @@ def run_backtest(
                     }])
                     from src.feature_engineering.build_event_calendar_feature import add_event_features_to_month_df
                     pred_row = add_event_features_to_month_df(pred_row)
-                    pred_total_xgb = predict_xgb(xgb_model, pred_row).iloc[0]
-                    if pd.notna(pred_total_xgb):
+
+                    pred_total_seasonal_yoy = predict_seasonal_event_adjusted_yoy(xgb_train, pred_row)
+                    if pd.notna(pred_total_seasonal_yoy):
                         _append_result(
                             results,
                             target_month=target_month,
                             cutoff_day=0,
                             platform=platform,
-                            model_name="xgboost_v2_event",
-                            pred_remaining_sales=float(pred_total_xgb),
+                            model_name="seasonal_event_adjusted_yoy",
+                            pred_remaining_sales=float(pred_total_seasonal_yoy),
                             actual_remaining_sales=actual_total,
-                            pred_total_sales=float(pred_total_xgb),
+                            pred_total_sales=float(pred_total_seasonal_yoy),
                             actual_total_sales=actual_total,
-                            abs_error_remaining=abs(float(pred_total_xgb) - actual_total),
-                            ape_remaining=_safe_pct_err(float(pred_total_xgb), actual_total),
-                            bias_remaining=float(pred_total_xgb) - actual_total,
-                            abs_error_total=abs(float(pred_total_xgb) - actual_total),
-                            ape_total=_safe_pct_err(float(pred_total_xgb), actual_total),
-                            bias_total=float(pred_total_xgb) - actual_total,
+                            abs_error_remaining=abs(float(pred_total_seasonal_yoy) - actual_total),
+                            ape_remaining=_safe_pct_err(float(pred_total_seasonal_yoy), actual_total),
+                            bias_remaining=float(pred_total_seasonal_yoy) - actual_total,
+                            abs_error_total=abs(float(pred_total_seasonal_yoy) - actual_total),
+                            ape_total=_safe_pct_err(float(pred_total_seasonal_yoy), actual_total),
+                            bias_total=float(pred_total_seasonal_yoy) - actual_total,
+                        )
+
+                    xgb_train_with_base_pred = xgb_train.copy()
+                    if not xgb_train_with_base_pred.empty:
+                        pred_hist_vals = []
+                        for _, hist_row in xgb_train_with_base_pred.iterrows():
+                            hist_target_row = pd.DataFrame([hist_row.to_dict()])
+                            pred_hist_vals.append(predict_seasonal_event_adjusted_yoy(xgb_train_with_base_pred, hist_target_row))
+                        xgb_train_with_base_pred['seasonal_event_adjusted_yoy_pred'] = pred_hist_vals
+
+                    pred_total_seasonal_yoy_preheat = apply_preheat_bias_correction(
+                        pred_total_seasonal_yoy,
+                        xgb_train_with_base_pred if 'xgb_train_with_base_pred' in locals() else xgb_train,
+                        pred_row,
+                    )
+                    if pd.notna(pred_total_seasonal_yoy_preheat):
+                        _append_result(
+                            results,
+                            target_month=target_month,
+                            cutoff_day=0,
+                            platform=platform,
+                            model_name="seasonal_event_adjusted_yoy_preheat_corrected",
+                            pred_remaining_sales=float(pred_total_seasonal_yoy_preheat),
+                            actual_remaining_sales=actual_total,
+                            pred_total_sales=float(pred_total_seasonal_yoy_preheat),
+                            actual_total_sales=actual_total,
+                            abs_error_remaining=abs(float(pred_total_seasonal_yoy_preheat) - actual_total),
+                            ape_remaining=_safe_pct_err(float(pred_total_seasonal_yoy_preheat), actual_total),
+                            bias_remaining=float(pred_total_seasonal_yoy_preheat) - actual_total,
+                            abs_error_total=abs(float(pred_total_seasonal_yoy_preheat) - actual_total),
+                            ape_total=_safe_pct_err(float(pred_total_seasonal_yoy_preheat), actual_total),
+                            bias_total=float(pred_total_seasonal_yoy_preheat) - actual_total,
+                        )
+
+                    inferred_brand = None
+                    inferred_platform = None
+                    if str(platform) == 'total':
+                        inferred_brand = 'total'
+                        inferred_platform = 'total'
+                    elif str(platform).startswith('brand:'):
+                        inferred_brand = str(platform).replace('brand:', '', 1)
+                        inferred_platform = 'total'
+                    elif str(platform) in ['京东', '阿里']:
+                        inferred_brand = 'total'
+                        inferred_platform = str(platform)
+
+                    runtime_uplift = get_preheat_uplift(
+                        brand=inferred_brand,
+                        month=target_period.month,
+                        platform=inferred_platform,
+                    )
+                    pred_total_fixed_default = apply_fixed_preheat_uplift(pred_total_seasonal_yoy, pred_row, runtime_uplift)
+                    if pd.notna(pred_total_fixed_default):
+                        _append_result(
+                            results,
+                            target_month=target_month,
+                            cutoff_day=0,
+                            platform=platform,
+                            model_name="seasonal_preheat_yoy",
+                            pred_remaining_sales=float(pred_total_fixed_default),
+                            actual_remaining_sales=actual_total,
+                            pred_total_sales=float(pred_total_fixed_default),
+                            actual_total_sales=actual_total,
+                            abs_error_remaining=abs(float(pred_total_fixed_default) - actual_total),
+                            ape_remaining=_safe_pct_err(float(pred_total_fixed_default), actual_total),
+                            bias_remaining=float(pred_total_fixed_default) - actual_total,
+                            abs_error_total=abs(float(pred_total_fixed_default) - actual_total),
+                            ape_total=_safe_pct_err(float(pred_total_fixed_default), actual_total),
+                            bias_total=float(pred_total_fixed_default) - actual_total,
+                        )
+
+                    for uplift in [1.10, 1.15, 1.20, 1.25]:
+                        pred_total_fixed_uplift = apply_fixed_preheat_uplift(pred_total_seasonal_yoy, pred_row, uplift)
+                        if pd.notna(pred_total_fixed_uplift):
+                            uplift_name = f"seasonal_event_adjusted_yoy_preheat_uplift_{int(round(uplift * 100))}"
+                            _append_result(
+                                results,
+                                target_month=target_month,
+                                cutoff_day=0,
+                                platform=platform,
+                                model_name=uplift_name,
+                                pred_remaining_sales=float(pred_total_fixed_uplift),
+                                actual_remaining_sales=actual_total,
+                                pred_total_sales=float(pred_total_fixed_uplift),
+                                actual_total_sales=actual_total,
+                                abs_error_remaining=abs(float(pred_total_fixed_uplift) - actual_total),
+                                ape_remaining=_safe_pct_err(float(pred_total_fixed_uplift), actual_total),
+                                bias_remaining=float(pred_total_fixed_uplift) - actual_total,
+                                abs_error_total=abs(float(pred_total_fixed_uplift) - actual_total),
+                                ape_total=_safe_pct_err(float(pred_total_fixed_uplift), actual_total),
+                                bias_total=float(pred_total_fixed_uplift) - actual_total,
+                            )
+
+                    pred_total_ensemble = predict_cutoff0_triplet_ensemble(
+                        pred_last_year_same_month=pred_total_ly,
+                        pred_yoy_growth_extrapolation=pred_total_yoy,
+                        pred_seasonal_event_adjusted_yoy=pred_total_seasonal_yoy,
+                        target_row=pred_row,
+                        entity_name=platform,
+                    )
+                    if pd.notna(pred_total_ensemble):
+                        _append_result(
+                            results,
+                            target_month=target_month,
+                            cutoff_day=0,
+                            platform=platform,
+                            model_name="cutoff0_triplet_ensemble",
+                            pred_remaining_sales=float(pred_total_ensemble),
+                            actual_remaining_sales=actual_total,
+                            pred_total_sales=float(pred_total_ensemble),
+                            actual_total_sales=actual_total,
+                            abs_error_remaining=abs(float(pred_total_ensemble) - actual_total),
+                            ape_remaining=_safe_pct_err(float(pred_total_ensemble), actual_total),
+                            bias_remaining=float(pred_total_ensemble) - actual_total,
+                            abs_error_total=abs(float(pred_total_ensemble) - actual_total),
+                            ape_total=_safe_pct_err(float(pred_total_ensemble), actual_total),
+                            bias_total=float(pred_total_ensemble) - actual_total,
+                        )
+
+                    pred_total_similar = predict_similar_month_retrieval(xgb_train, pred_row)
+                    if pd.notna(pred_total_similar):
+                        _append_result(
+                            results,
+                            target_month=target_month,
+                            cutoff_day=0,
+                            platform=platform,
+                            model_name="similar_month_retrieval",
+                            pred_remaining_sales=float(pred_total_similar),
+                            actual_remaining_sales=actual_total,
+                            pred_total_sales=float(pred_total_similar),
+                            actual_total_sales=actual_total,
+                            abs_error_remaining=abs(float(pred_total_similar) - actual_total),
+                            ape_remaining=_safe_pct_err(float(pred_total_similar), actual_total),
+                            bias_remaining=float(pred_total_similar) - actual_total,
+                            abs_error_total=abs(float(pred_total_similar) - actual_total),
+                            ape_total=_safe_pct_err(float(pred_total_similar), actual_total),
+                            bias_total=float(pred_total_similar) - actual_total,
                         )
 
                     pred_total_gbdt_dd = predict_tree_daily_direct(

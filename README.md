@@ -23,7 +23,6 @@
 - `last_year_same_month`
 - `yoy_growth_extrapolation`
 - `prophet_fullmonth`
-- `xgboost_v2_event`
 - `gbdt_daily_direct_c0`
 - `xgboost_daily_direct_c0`
 - `prophet_daily`

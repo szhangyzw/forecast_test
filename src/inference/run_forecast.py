@@ -7,11 +7,21 @@ from src.data_prep.clean_data import clean_raw_data
 from src.data_prep.build_calendar_feature import add_calendar_features
 from src.feature_engineering.build_base_feature import build_base_features
 from src.feature_engineering.build_mtd_feature import build_mtd_features
-from src.feature_engineering.build_snapshot_feature import build_snapshot_features, add_historical_share_features
+from src.feature_engineering.build_snapshot_feature import build_snapshot_features, add_historical_share_features, add_historical_ytd_share_features
 from src.feature_engineering.build_month_level_feature import build_month_level_features
 from src.models.baseline_mtd_progress import predict_by_progress
+from src.models.baseline_ytd_progress import predict_by_ytd_progress
 from src.models.baseline_history import predict_history_average
 from src.models.baseline_growth import predict_growth, estimate_recent_yoy_growth
+from src.models.cutoff0_enhanced import (
+    predict_seasonal_event_adjusted_yoy,
+    predict_similar_month_retrieval,
+    predict_cutoff0_triplet_ensemble,
+    apply_preheat_bias_correction,
+    apply_fixed_preheat_uplift,
+    DEFAULT_PREHEAT_UPLIFT,
+)
+from src.config_runtime import get_preheat_uplift
 from src.models.xgb_model import train_xgb, predict_xgb, FEATURES_CUTOFF0, FEATURES_CUTOFFN
 from src.models.prophet_model import predict_prophet_full_month
 from src.models.prophet_oldlogic_model import predict_prophet_mixed
@@ -20,7 +30,8 @@ from src.inference.recommend_model import recommend_model
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT = PROJECT_ROOT / "data" / "raw" / "test_forecast_data.csv"
+WORKSPACE_ROOT = PROJECT_ROOT.parent
+DEFAULT_INPUT = WORKSPACE_ROOT / "data" / "test_forecast_data.csv"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data"
 
 
@@ -131,7 +142,16 @@ def _finalize_prediction_output(result_df: pd.DataFrame, cutoff_day: int) -> pd.
         return result_df
 
     result_df = result_df.copy()
-    result_df['recommended_model'] = result_df['platform'].apply(lambda x: recommend_model(x, cutoff_day))
+    result_df['recommended_model'] = result_df.apply(
+        lambda r: recommend_model(
+            r['platform'],
+            cutoff_day,
+            brand=r.get('brand_scope'),
+            month=int(str(r.get('target_month'))[-2:]) if pd.notna(r.get('target_month')) else None,
+            platform=r.get('platform_scope'),
+        ),
+        axis=1,
+    )
     result_df['is_recommended'] = result_df['model_name'] == result_df['recommended_model']
 
     front_cols = [
@@ -166,6 +186,9 @@ def run_forecast(
         history_monthly = build_month_level_features(history_daily)
         history_monthly['period'] = pd.PeriodIndex(history_monthly['year_month'], freq='M')
 
+        history_snapshot_c0 = build_snapshot_features(history_daily, cutoff_day=0)
+        history_snapshot_c0 = add_historical_ytd_share_features(history_snapshot_c0)
+
         results = []
         horizon_days = int(target_period.days_in_month)
         ly_period = target_period - 12
@@ -187,15 +210,22 @@ def run_forecast(
             pred_total_hist = predict_history_average(hist_p_daily, horizon_days=horizon_days)
             _append_prediction(results, base_row, 'history_average', pred_total_hist, pred_total_hist)
 
-            pred_total_prophet = predict_prophet_full_month(
-                hist_p_daily[['date', 'sales']].copy(),
-                target_month=target_month,
-            )
-            _append_prediction(results, base_row, 'prophet_fullmonth', pred_total_prophet, pred_total_prophet)
+            hist_p_snapshot_c0 = history_snapshot_c0[history_snapshot_c0['platform'] == entity].copy()
+            target_ytd_share_row = hist_p_snapshot_c0[hist_p_snapshot_c0['target_month'] == history_until]
+            if not target_ytd_share_row.empty and pd.notna(target_ytd_share_row.iloc[-1].get('hist_ytd_share_p50')) and pd.notna(target_ytd_share_row.iloc[-1].get('hist_month_share_p50')):
+                pred_year_total_ytd = predict_by_ytd_progress(
+                    float(target_ytd_share_row.iloc[-1]['ytd_sales']),
+                    float(target_ytd_share_row.iloc[-1]['hist_ytd_share_p50'])
+                )
+                pred_total_ytd_to_month = pred_year_total_ytd * float(target_ytd_share_row.iloc[-1]['hist_month_share_p50'])
+                _append_prediction(results, base_row, 'ytd_to_month_share_p50', pred_total_ytd_to_month, pred_total_ytd_to_month)
 
             ly_row = hist_p_monthly[hist_p_monthly['period'] == ly_period]
+            pred_total_ly = pd.NA
+            pred_total_yoy = pd.NA
             if not ly_row.empty:
                 ly_value = float(ly_row.iloc[0]['month_total_sales'])
+                pred_total_ly = ly_value
                 _append_prediction(results, base_row, 'last_year_same_month', ly_value, ly_value)
 
                 yoy_growth = estimate_recent_yoy_growth(
@@ -227,10 +257,51 @@ def run_forecast(
             }])
             from src.feature_engineering.build_event_calendar_feature import add_event_features_to_month_df
             pred_row = add_event_features_to_month_df(pred_row)
-            xgb_model = train_xgb(hist_p_monthly, FEATURES_CUTOFF0, 'month_total_sales')
-            pred_total_xgb = predict_xgb(xgb_model, pred_row).iloc[0]
-            _append_prediction(results, base_row, 'xgboost_v2_event', pred_total_xgb, pred_total_xgb)
 
+            pred_total_seasonal_yoy = predict_seasonal_event_adjusted_yoy(hist_p_monthly, pred_row)
+            _append_prediction(results, base_row, 'seasonal_event_adjusted_yoy', pred_total_seasonal_yoy, pred_total_seasonal_yoy)
+
+            hist_with_base_pred = hist_p_monthly.copy()
+            if not hist_with_base_pred.empty:
+                pred_hist_vals = []
+                for _, hist_row in hist_with_base_pred.iterrows():
+                    hist_target_row = pd.DataFrame([hist_row.to_dict()])
+                    pred_hist_vals.append(predict_seasonal_event_adjusted_yoy(hist_with_base_pred, hist_target_row))
+                hist_with_base_pred['seasonal_event_adjusted_yoy_pred'] = pred_hist_vals
+
+            pred_total_seasonal_yoy_preheat = apply_preheat_bias_correction(
+                pred_total_seasonal_yoy,
+                hist_with_base_pred if 'hist_with_base_pred' in locals() else hist_p_monthly,
+                pred_row,
+            )
+            _append_prediction(results, base_row, 'seasonal_event_adjusted_yoy_preheat_corrected', pred_total_seasonal_yoy_preheat, pred_total_seasonal_yoy_preheat)
+
+            runtime_uplift = get_preheat_uplift(
+                brand=base_row.get('brand_scope'),
+                month=target_period.month,
+                platform=base_row.get('platform_scope'),
+            )
+            pred_total_fixed_default = apply_fixed_preheat_uplift(pred_total_seasonal_yoy, pred_row, runtime_uplift)
+            _append_prediction(results, base_row, 'seasonal_preheat_yoy', pred_total_fixed_default, pred_total_fixed_default)
+
+            for uplift in [1.10, 1.15, 1.20, 1.25]:
+                pred_total_fixed_uplift = apply_fixed_preheat_uplift(pred_total_seasonal_yoy, pred_row, uplift)
+                uplift_name = f"seasonal_event_adjusted_yoy_preheat_uplift_{int(round(uplift * 100))}"
+                _append_prediction(results, base_row, uplift_name, pred_total_fixed_uplift, pred_total_fixed_uplift)
+
+            pred_total_ensemble = predict_cutoff0_triplet_ensemble(
+                pred_last_year_same_month=pred_total_ly,
+                pred_yoy_growth_extrapolation=pred_total_yoy,
+                pred_seasonal_event_adjusted_yoy=pred_total_seasonal_yoy,
+                target_row=pred_row,
+                entity_name=entity,
+            )
+            _append_prediction(results, base_row, 'cutoff0_triplet_ensemble', pred_total_ensemble, pred_total_ensemble)
+
+            pred_total_similar = predict_similar_month_retrieval(hist_p_monthly, pred_row)
+            _append_prediction(results, base_row, 'similar_month_retrieval', pred_total_similar, pred_total_similar)
+
+            xgb_model = train_xgb(hist_p_monthly, FEATURES_CUTOFF0, 'month_total_sales')
             pred_total_gbdt_dd = predict_tree_daily_direct(
                 daily[daily['platform'] == entity].copy().sort_values('date'),
                 target_month=target_month,

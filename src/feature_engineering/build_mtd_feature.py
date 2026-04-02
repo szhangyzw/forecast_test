@@ -11,6 +11,15 @@ def build_mtd_features(df: pd.DataFrame) -> pd.DataFrame:
     out["days_elapsed"] = out["day_seq_in_month"]
     out["days_remaining"] = out["days_in_month"] - out["day_seq_in_month"]
 
+    out["ytd_sales"] = out.groupby(["platform", "year"])["sales"].cumsum()
+    year_total = (
+        out.groupby(["platform", "year"], as_index=False)["sales"]
+        .sum()
+        .rename(columns={"sales": "year_total_sales"})
+    )
+    out = out.merge(year_total, on=["platform", "year"], how="left")
+    out["ytd_progress"] = out["ytd_sales"] / out["year_total_sales"]
+
     # 历史同月同日累计（去年）
     ly = out[["platform", "month", "day_seq_in_month", "year", "mtd_sales"]].copy()
     ly["year"] = ly["year"] + 1

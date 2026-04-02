@@ -24,6 +24,7 @@ def build_snapshot_features(daily_df: pd.DataFrame, cutoff_day: int) -> pd.DataF
         "year", "month", "days_in_month",
         "days_elapsed", "days_remaining",
         "mtd_sales", "mtd_avg_sales", "mtd_progress",
+        "ytd_sales", "year_total_sales", "ytd_progress",
         "ly_same_month_same_day_mtd", "ly_same_month_total",
         "month_total_sales", "target_remaining_sales",
         "last_7d_avg", "last_30d_avg",
@@ -42,4 +43,26 @@ def add_historical_share_features(snapshot_df: pd.DataFrame) -> pd.DataFrame:
         .agg(hist_share_p50="median", hist_share_mean="mean")
     )
     out = df.merge(stats, on=["platform", "month", "days_elapsed"], how="left")
+    return out
+
+
+def add_historical_ytd_share_features(snapshot_df: pd.DataFrame) -> pd.DataFrame:
+    """按 platform + month 计算历史 YTD 累计占全年比重统计，并补目标月 month share。"""
+    df = snapshot_df.copy()
+    if 'ytd_sales' not in df.columns or 'year_total_sales' not in df.columns:
+        return df
+
+    df['historical_ytd_share'] = df['ytd_sales'] / df['year_total_sales']
+    df['historical_month_share'] = df['month_total_sales'] / df['year_total_sales']
+
+    ytd_stats = (
+        df.groupby(['platform', 'month'], as_index=False)['historical_ytd_share']
+        .agg(hist_ytd_share_p50='median', hist_ytd_share_mean='mean')
+    )
+    month_stats = (
+        df.groupby(['platform', 'month'], as_index=False)['historical_month_share']
+        .agg(hist_month_share_p50='median', hist_month_share_mean='mean')
+    )
+    out = df.merge(ytd_stats, on=['platform', 'month'], how='left')
+    out = out.merge(month_stats, on=['platform', 'month'], how='left')
     return out
