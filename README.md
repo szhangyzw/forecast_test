@@ -9,7 +9,7 @@
 
 ## 项目目标
 
-- 多模型并行预测：历史同期、同比外推、MTD 节奏外推、Prophet、XGBoost、GBDT、daily_direct、残差模型
+- 多模型并行预测：历史同期、同比外推、MTD 节奏外推、Prophet、XGBoost、GBDT、daily_direct、残差模型、Similar-month retrieval、Three-model weighted ensemble
 - 历史回测评估：按月份、平台、cutoff 时点评估模型表现
 - 动态选模：根据平台、月份类型、预测阶段推荐最优模型
 - 支持后续扩展区间预测与 dashboard
