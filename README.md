@@ -13,6 +13,15 @@
 - 历史回测评估：按月份、平台、cutoff 时点评估模型表现
 - 动态选模：根据平台、月份类型、预测阶段推荐最优模型
 - 支持后续扩展区间预测与 dashboard
+- 
+
+---
+
+## 回测结果
+
+- MONTH START： 推荐Prophet Error-Approx. ±12% 
+- MID-MONTH： 推荐MTD progress%  Error-Approx. ±5%   
+- MONTH END： 推荐MTD progress% Error-Approx. ±2%
 
 ---
 
