@@ -169,9 +169,9 @@ python main.py --action backtest --cutoff-days 0,5,10,15,20,25
 ## 当前推荐经验（基于现阶段回测）
 
 ### cutoff = 0
-- total：`yoy_growth_extrapolation` 常较稳
+- total：`prophet_daily` 常较稳
 - 京东：`last_year_same_month` 常较稳
-- 阿里：`yoy_growth_extrapolation` / `gbdt_daily_direct_c0` 可重点比较
+- 阿里：`yoy_growth_extrapolation` / `prophet_daily` 可重点比较
 
 ### cutoff > 0
 - `mtd_progress_p50` 当前通常最稳
